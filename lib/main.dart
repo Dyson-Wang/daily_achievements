@@ -2,28 +2,56 @@ import 'dart:math';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 
-// 常量提取
+// 常量提取与扩展
 class AppConstants {
-  // static const appBackground = Color(0xFFF9F9F9);
+  // 颜色常量
   static const appBackground = Color(0xFFFCFCFC);
   static const cardShadow = Color(0x1A8E9AAF);
   static const textGrey = CupertinoColors.systemGrey;
   static const borderColor = Color(0xFFEDEFF9);
 
+  // 尺寸常量
   static const paddingHorizontal = 32.0;
   static const paddingVertical = 8.0;
   static const itemRadius = 12.0;
   static const avatarSize = 48.0;
 
+  // 图片资源
   static const backgroundImage = 'assets/images/background@3x.png';
   static const avatarImage = 'assets/images/img_avatar@3x.png';
   static const buttonImage = 'assets/images/butter_Square@3x.png';
+  static const flagImage = 'assets/images/flag.png';
+
+  // 文本常量
+  static const appTitle = '每日成就';
+  static const greeting = 'Hi Sundy!';
+  static const inputHint = '在这里写下今天的成就吧';
+  static const instruction = '写下你今天的成就';
+}
+
+// 数据模型
+class Achievement {
+  final String title;
+  final DateTime date;
+
+  Achievement({required this.title, required this.date});
+
+  factory Achievement.fromJson(Map<String, dynamic> json) => Achievement(
+    title: json['title'],
+    date: DateFormat('yyyy.MM.dd').parse(json['date']),
+  );
+
+  Map<String, dynamic> toJson() => {
+    'title': title,
+    'date': DateFormat('yyyy.MM.dd').format(date),
+  };
 }
 
 void main() => runApp(const MainApp());
 
-// App入口
 class MainApp extends StatelessWidget {
   const MainApp({super.key});
 
@@ -36,7 +64,6 @@ class MainApp extends StatelessWidget {
   }
 }
 
-// 成就页面-主页
 class AchievementScreen extends StatefulWidget {
   const AchievementScreen({super.key});
 
@@ -44,82 +71,143 @@ class AchievementScreen extends StatefulWidget {
   AchievementScreenState createState() => AchievementScreenState();
 }
 
-// 成就页面状态
 class AchievementScreenState extends State<AchievementScreen> {
-  final List<Map<String, String>> _achievements = [];
+  final List<Achievement> _achievements = [];
   final TextEditingController _controller = TextEditingController();
   final Map<String, Color> _colorCache = {};
+  late SharedPreferences _prefs;
 
-  // 根据内容生成独一颜色
-  Color _generateUniqueColor(Map<String, String> data) {
-    final key = '${data['title']}-${data['date']}';
-    return _colorCache.putIfAbsent(key, () {
-      final random = Random(key.hashCode);
-      return HSVColor.fromAHSV(
+  @override
+  void initState() {
+    super.initState();
+    _initializeData();
+  }
+
+  Future<void> _initializeData() async {
+    _prefs = await SharedPreferences.getInstance();
+    await _loadAchievements();
+  }
+
+  Future<void> _loadAchievements() async {
+    try {
+      final achievementsJson = _prefs.getStringList('achievements');
+      final colorsJson = _prefs.getString('colors');
+
+      if (achievementsJson != null) {
+        final loaded = achievementsJson
+            .map((json) => Achievement.fromJson(jsonDecode(json)))
+            .toList();
+        if (mounted) setState(() => _achievements.addAll(loaded));
+      }
+
+      if (colorsJson != null) {
+        final colors = jsonDecode(colorsJson) as Map<String, dynamic>;
+        _colorCache.addAll(
+          colors.map((key, value) => MapEntry(key, _hexToColor(value as String)))
+        );
+      }
+    } catch (e) {
+      debugPrint('Error loading data: $e');
+    }
+  }
+
+  Future<void> _persistData() async {
+    try {
+      final achievementsJson = _achievements
+          .map((a) => jsonEncode(a.toJson()))
+          .toList();
+      final colorsJson = jsonEncode(
+        _colorCache.map((key, color) => MapEntry(key, _colorToHex(color)))
+      );
+
+      await Future.wait([
+        _prefs.setStringList('achievements', achievementsJson),
+        _prefs.setString('colors', colorsJson),
+      ]);
+    } catch (e) {
+      debugPrint('Error saving data: $e');
+    }
+  }
+
+  Color _generateColor(String seed) {
+    return _colorCache.putIfAbsent(seed, () {
+      final random = Random(seed.hashCode);
+      final color = HSVColor.fromAHSV(
         1.0,
         random.nextDouble() * 360,
         0.6 + random.nextDouble() * 0.4,
         0.7 + random.nextDouble() * 0.3,
       ).toColor();
+      return color;
     });
   }
-
-  String _getFormattedDate() => DateFormat('yyyy.MM.dd').format(DateTime.now());
 
   void _addAchievement(String text) {
     if (text.isEmpty) return;
 
+    final newAchievement = Achievement(
+      title: text,
+      date: DateTime.now(),
+    );
+
     setState(() {
-      _achievements.insert(0, {'title': text, 'date': _getFormattedDate()});
-      _controller.clear();
+      _achievements.insert(0, newAchievement);
+      _generateColor(_getAchievementKey(newAchievement));
     });
+
+    _persistData();
+    _controller.clear();
   }
 
-  // 主build函数
+  String _getAchievementKey(Achievement a) => 
+    '${a.title}-${DateFormat('yyyy.MM.dd').format(a.date)}';
+
+  String _colorToHex(Color color) => '#${color.value.toRadixString(16).padLeft(8, '0')}';
+  Color _hexToColor(String hex) => Color(int.parse(hex.substring(1), radix: 16));
+
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
       child: Stack(
         children: [
-          Positioned.fill(child: Container(color: AppConstants.appBackground)),
-          _buildBackgroundImage(),
-          _buildMainContent(),
+          _buildBackground(),
+          _buildContent(),
         ],
       ),
     );
   }
 
-  // 背景图片
-  Widget _buildBackgroundImage() => Positioned.fill(
-    child: Align(
-      alignment: Alignment.topCenter,
-      child: Image.asset(AppConstants.backgroundImage, fit: BoxFit.fitWidth, width: double.infinity,),
+  Widget _buildBackground() => Positioned.fill(
+    child: ColoredBox(
+      color: AppConstants.appBackground,
+      child: Image.asset(
+        AppConstants.backgroundImage,
+        fit: BoxFit.cover,
+        width: double.infinity,
+      ),
     ),
   );
 
-  // 主界面逻辑
-  Widget _buildMainContent() => CupertinoPageScaffold(
+  Widget _buildContent() => CupertinoPageScaffold(
     backgroundColor: CupertinoColors.transparent,
     navigationBar: const CupertinoNavigationBar(
       backgroundColor: CupertinoColors.transparent,
-      middle: Text('每日成就'),
+      middle: Text(AppConstants.appTitle),
       padding: EdgeInsetsDirectional.only(top: 20),
     ),
     child: SafeArea(
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildHeader(),
           const SizedBox(height: 24),
-          _buildAchievementsList(),
-          _buildInputField(),
+          Expanded(child: _buildAchievementList()),
+          _buildInputPanel(),
         ],
       ),
     ),
   );
 
-  // 个人信息展示
   Widget _buildHeader() => Padding(
     padding: const EdgeInsets.symmetric(
       horizontal: AppConstants.paddingHorizontal,
@@ -132,12 +220,12 @@ class AchievementScreenState extends State<AchievementScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Hi Sundy!',
+              AppConstants.greeting,
               style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             ),
             SizedBox(height: 4),
             Text(
-              '写下你今天的成就',
+              AppConstants.instruction,
               style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             ),
           ],
@@ -154,63 +242,54 @@ class AchievementScreenState extends State<AchievementScreen> {
     ),
   );
 
-  // 成就列表
-  Widget _buildAchievementsList() => Expanded(
-    child: CupertinoScrollbar(
-      thumbVisibility: false,
-      child: ListView.builder(
-        padding: const EdgeInsets.only(bottom: 16),
-        itemCount: _achievements.length,
-        itemBuilder:
-            (context, index) => AchievementItem(
-              achievement: _achievements[index],
-              color: _generateUniqueColor(_achievements[index]),
-            ),
+  Widget _buildAchievementList() => CupertinoScrollbar(
+    thumbVisibility: false,
+    child: ListView.separated(
+      padding: const EdgeInsets.only(bottom: 16),
+      itemCount: _achievements.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      itemBuilder: (context, index) => AchievementItem(
+        achievement: _achievements[index],
+        color: _generateColor(_getAchievementKey(_achievements[index])),
       ),
     ),
   );
 
-  // 输入框
-  Widget _buildInputField() => Padding(
+  Widget _buildInputPanel() => Padding(
     padding: const EdgeInsets.only(
       left: AppConstants.paddingHorizontal,
       right: AppConstants.paddingHorizontal,
       bottom: 32,
     ),
-    child: Container(
+    child: CupertinoTextField(
+      controller: _controller,
+      placeholder: AppConstants.inputHint,
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
       decoration: BoxDecoration(
+        color: CupertinoColors.white,
         borderRadius: BorderRadius.circular(AppConstants.itemRadius),
-        border: Border.all(color: AppConstants.borderColor, width: 2),
-      ),
-      child: CupertinoTextField(
-        controller: _controller,
-        placeholder: '在这里写下今天的成就吧',
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-        decoration: BoxDecoration(
-          color: CupertinoColors.white,
-          borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: AppConstants.borderColor,
+          width: 2,
         ),
-        suffix: CupertinoButton(
-          padding: const EdgeInsets.only(right: 8),
-          onPressed: () => _addAchievement(_controller.text),
-          child: Image.asset(
-            AppConstants.buttonImage,
-            width: 36,
-            height: 36,
-            fit: BoxFit.cover,
-          ),
-        ),
-        onSubmitted: (text) {
-          _addAchievement(text);
-        },
       ),
+      suffix: CupertinoButton(
+        padding: const EdgeInsets.only(right: 8),
+        onPressed: () => _addAchievement(_controller.text),
+        child: Image.asset(
+          AppConstants.buttonImage,
+          width: 36,
+          height: 36,
+          fit: BoxFit.cover,
+        ),
+      ),
+      onSubmitted: _addAchievement,
     ),
   );
 }
 
-// 独立列表项组件
 class AchievementItem extends StatelessWidget {
-  final Map<String, String> achievement;
+  final Achievement achievement;
   final Color color;
 
   const AchievementItem({
@@ -224,10 +303,9 @@ class AchievementItem extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: AppConstants.paddingHorizontal,
-        vertical: AppConstants.paddingVertical,
       ),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+        padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
           color: CupertinoColors.white,
           borderRadius: BorderRadius.circular(AppConstants.itemRadius),
@@ -242,47 +320,52 @@ class AchievementItem extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-              child: Center(
-                child: SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: Image.asset(
-                    'assets/images/flag.png', // 替换为你的图片路径
-                    fit: BoxFit.contain, // 保持图片适应容器
-                  ),
-                ),
-              ),
-            ),
+            _buildIcon(),
             const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    achievement['title']!,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    achievement['date']!,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppConstants.textGrey,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            _buildContent(),
           ],
         ),
       ),
     );
   }
+
+  Widget _buildIcon() => Container(
+    width: 36,
+    height: 36,
+    decoration: BoxDecoration(
+      color: color,
+      shape: BoxShape.circle,
+    ),
+    child: Center(
+      child: Image.asset(
+        AppConstants.flagImage,
+        width: 16,
+        height: 16,
+        fit: BoxFit.contain,
+      ),
+    ),
+  );
+
+  Widget _buildContent() => Expanded(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          achievement.title,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          DateFormat('yyyy.MM.dd').format(achievement.date),
+          style: const TextStyle(
+            fontSize: 12,
+            color: AppConstants.textGrey,
+          ),
+        ),
+      ],
+    ),
+  );
 }

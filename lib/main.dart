@@ -1,9 +1,13 @@
 import 'dart:math';
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 
 // 常量提取与扩展
 class AppConstants {
@@ -32,7 +36,7 @@ class AppConstants {
   static const instruction = '写下你今天的成就';
 }
 
-// 数据模型
+// 成就数据模型
 class Achievement {
   final String title;
   final DateTime date;
@@ -64,6 +68,7 @@ class MainApp extends StatelessWidget {
   }
 }
 
+// 主页面
 class AchievementScreen extends StatefulWidget {
   const AchievementScreen({super.key});
 
@@ -71,11 +76,15 @@ class AchievementScreen extends StatefulWidget {
   AchievementScreenState createState() => AchievementScreenState();
 }
 
+// 主页面状态
 class AchievementScreenState extends State<AchievementScreen> {
   final List<Achievement> _achievements = [];
   final TextEditingController _controller = TextEditingController();
+  final TextEditingController _nameController = TextEditingController();
   final Map<String, Color> _colorCache = {};
   late SharedPreferences _prefs;
+  File? _avatar;
+  String? _userName;
 
   @override
   void initState() {
@@ -85,25 +94,31 @@ class AchievementScreenState extends State<AchievementScreen> {
 
   Future<void> _initializeData() async {
     _prefs = await SharedPreferences.getInstance();
+    _userName = _prefs.getString('name');
+    await _loadAvatar();
     await _loadAchievements();
   }
 
+  // 取出本地存储的数据
   Future<void> _loadAchievements() async {
     try {
       final achievementsJson = _prefs.getStringList('achievements');
       final colorsJson = _prefs.getString('colors');
 
       if (achievementsJson != null) {
-        final loaded = achievementsJson
-            .map((json) => Achievement.fromJson(jsonDecode(json)))
-            .toList();
+        final loaded =
+            achievementsJson
+                .map((json) => Achievement.fromJson(jsonDecode(json)))
+                .toList();
         if (mounted) setState(() => _achievements.addAll(loaded));
       }
 
       if (colorsJson != null) {
         final colors = jsonDecode(colorsJson) as Map<String, dynamic>;
         _colorCache.addAll(
-          colors.map((key, value) => MapEntry(key, _hexToColor(value as String)))
+          colors.map(
+            (key, value) => MapEntry(key, _hexToColor(value as String)),
+          ),
         );
       }
     } catch (e) {
@@ -111,13 +126,13 @@ class AchievementScreenState extends State<AchievementScreen> {
     }
   }
 
+  // 本地化存储数据
   Future<void> _persistData() async {
     try {
-      final achievementsJson = _achievements
-          .map((a) => jsonEncode(a.toJson()))
-          .toList();
+      final achievementsJson =
+          _achievements.map((a) => jsonEncode(a.toJson())).toList();
       final colorsJson = jsonEncode(
-        _colorCache.map((key, color) => MapEntry(key, _colorToHex(color)))
+        _colorCache.map((key, color) => MapEntry(key, _colorToHex(color))),
       );
 
       await Future.wait([
@@ -129,26 +144,48 @@ class AchievementScreenState extends State<AchievementScreen> {
     }
   }
 
+  // 选择并保存头像
+  Future<void> _pickAndSaveAvatar() async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+    if (pickedFile == null) return;
+
+    final directory = await getApplicationDocumentsDirectory();
+    final path = "${directory.path}/avatar.png";
+    final savedFile = File(pickedFile.path).copySync(path); // 复制文件
+
+    setState(() => _avatar = savedFile);
+  }
+
+  // 加载本地头像
+  Future<void> _loadAvatar() async {
+    final directory = await getApplicationDocumentsDirectory();
+    final avatarFile = File("${directory.path}/avatar.png");
+    if (avatarFile.existsSync()) {
+      setState(() => _avatar = avatarFile);
+    }
+  }
+
+  // 根据内容生成唯一颜色
   Color _generateColor(String seed) {
     return _colorCache.putIfAbsent(seed, () {
       final random = Random(seed.hashCode);
-      final color = HSVColor.fromAHSV(
-        1.0,
-        random.nextDouble() * 360,
-        0.6 + random.nextDouble() * 0.4,
-        0.7 + random.nextDouble() * 0.3,
-      ).toColor();
+      final color =
+          HSVColor.fromAHSV(
+            1.0,
+            random.nextDouble() * 360,
+            0.6 + random.nextDouble() * 0.4,
+            0.7 + random.nextDouble() * 0.3,
+          ).toColor();
       return color;
     });
   }
 
+  // 添加成就
   void _addAchievement(String text) {
     if (text.isEmpty) return;
 
-    final newAchievement = Achievement(
-      title: text,
-      date: DateTime.now(),
-    );
+    final newAchievement = Achievement(title: text, date: DateTime.now());
 
     setState(() {
       _achievements.insert(0, newAchievement);
@@ -159,25 +196,66 @@ class AchievementScreenState extends State<AchievementScreen> {
     _controller.clear();
   }
 
-  String _getAchievementKey(Achievement a) => 
-    '${a.title}-${DateFormat('yyyy.MM.dd').format(a.date)}';
+  String _getAchievementKey(Achievement a) =>
+      '${a.title}-${DateFormat('yyyy.MM.dd').format(a.date)}';
 
-  String _colorToHex(Color color) => '#${color.value.toRadixString(16).padLeft(8, '0')}';
-  Color _hexToColor(String hex) => Color(int.parse(hex.substring(1), radix: 16));
+  String _colorToHex(Color color) =>
+      '#${color.value.toRadixString(16).padLeft(8, '0')}';
+  Color _hexToColor(String hex) =>
+      Color(int.parse(hex.substring(1), radix: 16));
+
+  // 新增：保存用户信息
+  void _saveUserInfo() {
+    final name = _nameController.text.trim();
+    if (name.isEmpty) {
+      _showErrorDialog('请输入您的姓名');
+      return;
+    }
+
+    // if (_avatar == null) {
+    //   _showErrorDialog('请选择头像');
+    //   return;
+    // }
+
+    setState(() {
+      _userName = name;
+      _prefs.setString('name', name);
+    });
+  }
+
+  void _showErrorDialog(String message) {
+    showCupertinoDialog(
+      context: context,
+      builder:
+          (context) => CupertinoAlertDialog(
+            title: const Text('提示'),
+            content: Text(message),
+            actions: [
+              CupertinoDialogAction(
+                child: const Text('确定'),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    bool showContent = _avatar != null && _userName != null;
+    // bool showContent = false;
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
       child: Stack(
         children: [
           _buildBackground(),
-          _buildContent(),
+          showContent ? _buildContent() : _buildInfoPage(),
         ],
       ),
     );
   }
 
+  // 背景图片
   Widget _buildBackground() => Positioned.fill(
     child: ColoredBox(
       color: AppConstants.appBackground,
@@ -189,6 +267,63 @@ class AchievementScreenState extends State<AchievementScreen> {
     ),
   );
 
+  // 新增：用户信息输入页面
+  Widget _buildInfoPage() => CupertinoPageScaffold(
+    backgroundColor: CupertinoColors.transparent,
+    child: Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppConstants.paddingHorizontal,
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          GestureDetector(
+            onTap: _pickAndSaveAvatar,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child:
+                  _avatar != null
+                      ? Image.file(
+                        _avatar!,
+                        width: AppConstants.avatarSize,
+                        height: AppConstants.avatarSize,
+                        fit: BoxFit.cover,
+                      )
+                      : Image.asset(
+                        AppConstants.avatarImage,
+                        width: AppConstants.avatarSize,
+                        height: AppConstants.avatarSize,
+                        fit: BoxFit.cover,
+                      ),
+            ),
+          ),
+          const SizedBox(height: 32),
+          const Text(
+            '希望怎么称呼你？',
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 32),
+          CupertinoTextField(
+            controller: _nameController,
+            placeholder: '输入您的姓名',
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+            decoration: BoxDecoration(
+              color: CupertinoColors.white,
+              borderRadius: BorderRadius.circular(AppConstants.itemRadius),
+              border: Border.all(color: AppConstants.borderColor, width: 2),
+            ),
+          ),
+          const SizedBox(height: 32),
+          CupertinoButton.filled(
+            onPressed: _saveUserInfo,
+            child: const Text('保存并开始使用'),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  // 内容Scaffold和navbar
   Widget _buildContent() => CupertinoPageScaffold(
     backgroundColor: CupertinoColors.transparent,
     navigationBar: const CupertinoNavigationBar(
@@ -208,6 +343,7 @@ class AchievementScreenState extends State<AchievementScreen> {
     ),
   );
 
+  // 修改：动态显示用户名
   Widget _buildHeader() => Padding(
     padding: const EdgeInsets.symmetric(
       horizontal: AppConstants.paddingHorizontal,
@@ -216,45 +352,59 @@ class AchievementScreenState extends State<AchievementScreen> {
     child: Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        const Column(
+        Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              AppConstants.greeting,
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              'Hi ${_userName ?? ''}!',
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             ),
-            SizedBox(height: 4),
-            Text(
+            const SizedBox(height: 4),
+            const Text(
               AppConstants.instruction,
               style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             ),
           ],
         ),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: Image.asset(
-            AppConstants.avatarImage,
-            width: AppConstants.avatarSize,
-            height: AppConstants.avatarSize,
+        GestureDetector(
+          onTap: _pickAndSaveAvatar,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child:
+                _avatar != null
+                    ? Image.file(
+                      _avatar!,
+                      width: AppConstants.avatarSize,
+                      height: AppConstants.avatarSize,
+                      fit: BoxFit.cover,
+                    )
+                    : Image.asset(
+                      AppConstants.avatarImage,
+                      width: AppConstants.avatarSize,
+                      height: AppConstants.avatarSize,
+                    ),
           ),
         ),
       ],
     ),
   );
 
+  // 成就列表
   Widget _buildAchievementList() => CupertinoScrollbar(
     thumbVisibility: false,
     child: ListView.separated(
       padding: const EdgeInsets.only(bottom: 16),
       itemCount: _achievements.length,
       separatorBuilder: (_, __) => const SizedBox(height: 8),
-      itemBuilder: (context, index) => AchievementItem(
-        achievement: _achievements[index],
-        color: _generateColor(_getAchievementKey(_achievements[index])),
-      ),
+      itemBuilder:
+          (context, index) => AchievementItem(
+            achievement: _achievements[index],
+            color: _generateColor(_getAchievementKey(_achievements[index])),
+          ),
     ),
   );
 
+  // input组件
   Widget _buildInputPanel() => Padding(
     padding: const EdgeInsets.only(
       left: AppConstants.paddingHorizontal,
@@ -268,10 +418,7 @@ class AchievementScreenState extends State<AchievementScreen> {
       decoration: BoxDecoration(
         color: CupertinoColors.white,
         borderRadius: BorderRadius.circular(AppConstants.itemRadius),
-        border: Border.all(
-          color: AppConstants.borderColor,
-          width: 2,
-        ),
+        border: Border.all(color: AppConstants.borderColor, width: 2),
       ),
       suffix: CupertinoButton(
         padding: const EdgeInsets.only(right: 8),
@@ -288,6 +435,7 @@ class AchievementScreenState extends State<AchievementScreen> {
   );
 }
 
+// 成就项目
 class AchievementItem extends StatelessWidget {
   final Achievement achievement;
   final Color color;
@@ -319,11 +467,7 @@ class AchievementItem extends StatelessWidget {
           ],
         ),
         child: Row(
-          children: [
-            _buildIcon(),
-            const SizedBox(width: 12),
-            _buildContent(),
-          ],
+          children: [_buildIcon(), const SizedBox(width: 12), _buildContent()],
         ),
       ),
     );
@@ -332,10 +476,7 @@ class AchievementItem extends StatelessWidget {
   Widget _buildIcon() => Container(
     width: 36,
     height: 36,
-    decoration: BoxDecoration(
-      color: color,
-      shape: BoxShape.circle,
-    ),
+    decoration: BoxDecoration(color: color, shape: BoxShape.circle),
     child: Center(
       child: Image.asset(
         AppConstants.flagImage,
@@ -352,18 +493,12 @@ class AchievementItem extends StatelessWidget {
       children: [
         Text(
           achievement.title,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-          ),
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 8),
         Text(
           DateFormat('yyyy.MM.dd').format(achievement.date),
-          style: const TextStyle(
-            fontSize: 12,
-            color: AppConstants.textGrey,
-          ),
+          style: const TextStyle(fontSize: 12, color: AppConstants.textGrey),
         ),
       ],
     ),

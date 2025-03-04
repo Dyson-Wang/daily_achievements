@@ -64,7 +64,7 @@ class MainApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const CupertinoApp(
-      theme: CupertinoThemeData(brightness: Brightness.dark),
+      theme: CupertinoThemeData(brightness: Brightness.light),
       title: '每日成就',
       home: AchievementScreen(),
     );

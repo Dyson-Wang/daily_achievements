@@ -43,6 +43,7 @@ class Achievement {
 
   Achievement({required this.title, required this.date});
 
+  // 从json转换到对象
   factory Achievement.fromJson(Map<String, dynamic> json) => Achievement(
     title: json['title'],
     date: DateFormat('yyyy.MM.dd').parse(json['date']),
@@ -54,6 +55,7 @@ class Achievement {
   };
 }
 
+// app 入口
 void main() => runApp(const MainApp());
 
 class MainApp extends StatelessWidget {
@@ -84,6 +86,7 @@ class AchievementScreenState extends State<AchievementScreen> {
   final Map<String, Color> _colorCache = {};
   late SharedPreferences _prefs;
   File? _avatar;
+  Uint8List? _imageBytes;
   String? _userName;
 
   @override
@@ -105,6 +108,7 @@ class AchievementScreenState extends State<AchievementScreen> {
       final achievementsJson = _prefs.getStringList('achievements');
       final colorsJson = _prefs.getString('colors');
 
+      // 加载本地存储的成就对象
       if (achievementsJson != null) {
         final loaded =
             achievementsJson
@@ -113,6 +117,7 @@ class AchievementScreenState extends State<AchievementScreen> {
         if (mounted) setState(() => _achievements.addAll(loaded));
       }
 
+      // 加载本地存储的颜色对象
       if (colorsJson != null) {
         final colors = jsonDecode(colorsJson) as Map<String, dynamic>;
         _colorCache.addAll(
@@ -152,9 +157,14 @@ class AchievementScreenState extends State<AchievementScreen> {
 
     final directory = await getApplicationDocumentsDirectory();
     final path = "${directory.path}/avatar.png";
-    final savedFile = File(pickedFile.path).copySync(path); // 复制文件
 
-    setState(() => _avatar = savedFile);
+    final savedFile = File(pickedFile.path).copySync(path); // 复制文件
+    final bytes = await savedFile.readAsBytes();
+
+    setState(() {
+      _imageBytes = bytes;
+      _avatar = savedFile;
+    });
   }
 
   // 加载本地头像
@@ -162,7 +172,11 @@ class AchievementScreenState extends State<AchievementScreen> {
     final directory = await getApplicationDocumentsDirectory();
     final avatarFile = File("${directory.path}/avatar.png");
     if (avatarFile.existsSync()) {
-      setState(() => _avatar = avatarFile);
+      final bytes = await avatarFile.readAsBytes();
+      setState(() {
+        _avatar = avatarFile;
+        _imageBytes = bytes;
+      });
     }
   }
 
@@ -283,11 +297,12 @@ class AchievementScreenState extends State<AchievementScreen> {
               borderRadius: BorderRadius.circular(16),
               child:
                   _avatar != null
-                      ? Image.file(
-                        _avatar!,
+                      ? Image.memory(
+                        _imageBytes!,
                         width: AppConstants.avatarSize,
                         height: AppConstants.avatarSize,
                         fit: BoxFit.cover,
+                        key: ValueKey(DateTime.now().millisecondsSinceEpoch),
                       )
                       : Image.asset(
                         AppConstants.avatarImage,
@@ -372,8 +387,8 @@ class AchievementScreenState extends State<AchievementScreen> {
             borderRadius: BorderRadius.circular(16),
             child:
                 _avatar != null
-                    ? Image.file(
-                      _avatar!,
+                    ? Image.memory(
+                      _imageBytes!,
                       width: AppConstants.avatarSize,
                       height: AppConstants.avatarSize,
                       fit: BoxFit.cover,

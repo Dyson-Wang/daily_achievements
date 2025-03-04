@@ -64,7 +64,8 @@ class MainApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const CupertinoApp(
-      theme: CupertinoThemeData(brightness: Brightness.light),
+      theme: CupertinoThemeData(brightness: Brightness.dark),
+      title: '每日成就',
       home: AchievementScreen(),
     );
   }
@@ -259,7 +260,7 @@ class AchievementScreenState extends State<AchievementScreen> {
     bool showContent = _avatar != null && _userName != null;
     // bool showContent = false;
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light,
+      value: SystemUiOverlayStyle.dark,
       child: Stack(
         children: [
           _buildBackground(),

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -96,6 +97,7 @@ class AchievementScreenState extends State<AchievementScreen> {
     _initializeData();
   }
 
+  // 初始化名字头像成就列表
   Future<void> _initializeData() async {
     _prefs = await SharedPreferences.getInstance();
     _userName = _prefs.getString('name');
@@ -150,7 +152,7 @@ class AchievementScreenState extends State<AchievementScreen> {
     }
   }
 
-  // 选择并保存头像
+  // 选择并保存头像到avatar.png
   Future<void> _pickAndSaveAvatar() async {
     final picker = ImagePicker();
     final pickedFile = await picker.pickImage(source: ImageSource.gallery);
@@ -168,7 +170,7 @@ class AchievementScreenState extends State<AchievementScreen> {
     });
   }
 
-  // 加载本地头像
+  // 加载本地avatar.png头像
   Future<void> _loadAvatar() async {
     final directory = await getApplicationDocumentsDirectory();
     final avatarFile = File("${directory.path}/avatar.png");
@@ -211,6 +213,7 @@ class AchievementScreenState extends State<AchievementScreen> {
     _controller.clear();
   }
 
+  // 获取成就唯一seed
   String _getAchievementKey(Achievement a) =>
       '${a.title}-${DateFormat('yyyy.MM.dd').format(a.date)}';
 
@@ -316,7 +319,7 @@ class AchievementScreenState extends State<AchievementScreen> {
           ),
           const SizedBox(height: 32),
           const Text(
-            '希望怎么称呼你？',
+            '怎么称呼你',
             style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 32),
@@ -333,7 +336,7 @@ class AchievementScreenState extends State<AchievementScreen> {
           const SizedBox(height: 32),
           CupertinoButton.filled(
             onPressed: _saveUserInfo,
-            child: const Text('保存并开始使用'),
+            child: const Text('进入'),
           ),
         ],
       ),
@@ -416,8 +419,22 @@ class AchievementScreenState extends State<AchievementScreen> {
       separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemBuilder:
           (context, index) => AchievementItem(
+            key: ValueKey(_getAchievementKey(_achievements[index])),
             achievement: _achievements[index],
             color: _generateColor(_getAchievementKey(_achievements[index])),
+            onUpdated: (updatedAchievement) {
+              final oldKey = _getAchievementKey(_achievements[index]);
+              final newKey = _getAchievementKey(updatedAchievement);
+              setState(() {
+                // 更新成就列表
+                _achievements[index] = updatedAchievement;
+
+                // 更新颜色缓存
+                _colorCache.remove(oldKey);
+                _colorCache[newKey] = _generateColor(newKey);
+              });
+              _persistData();
+            },
           ),
     ),
   );
@@ -454,15 +471,45 @@ class AchievementScreenState extends State<AchievementScreen> {
 }
 
 // 成就项目
-class AchievementItem extends StatelessWidget {
+class AchievementItem extends StatefulWidget {
   final Achievement achievement;
   final Color color;
+  final Function(Achievement) onUpdated;
 
   const AchievementItem({
     super.key,
     required this.achievement,
     required this.color,
+    required this.onUpdated,
   });
+
+  @override
+  State<AchievementItem> createState() => _AchievementItemState();
+}
+
+class _AchievementItemState extends State<AchievementItem> {
+  late Achievement _achievement;
+  late TextEditingController _titleController;
+  bool _isEditing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _achievement = widget.achievement;
+    _titleController = TextEditingController(text: _achievement.title);
+  }
+
+  void _updateAchievement() {
+    final newAchievement = Achievement(
+      title: _titleController.text,
+      date: _achievement.date,
+    );
+    setState(() {
+      _achievement = newAchievement;
+      _isEditing = false;
+    });
+    widget.onUpdated(newAchievement); // 触发回调通知父组件
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -494,7 +541,7 @@ class AchievementItem extends StatelessWidget {
   Widget _buildIcon() => Container(
     width: 36,
     height: 36,
-    decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+    decoration: BoxDecoration(color: widget.color, shape: BoxShape.circle),
     child: Center(
       child: Image.asset(
         AppConstants.flagImage,
@@ -509,13 +556,25 @@ class AchievementItem extends StatelessWidget {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          achievement.title,
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-        ),
+        if (_isEditing)
+          Text(
+            widget.achievement.title,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          )
+        else
+          CupertinoTextField(
+            controller: _titleController,
+            placeholder: '编辑成就',
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            autofocus: true,
+            onSubmitted: (_) => _updateAchievement(),
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.transparent),
+            ),
+          ),
         const SizedBox(height: 8),
         Text(
-          DateFormat('yyyy.MM.dd').format(achievement.date),
+          DateFormat('yyyy.MM.dd').format(widget.achievement.date),
           style: const TextStyle(fontSize: 12, color: AppConstants.textGrey),
         ),
       ],

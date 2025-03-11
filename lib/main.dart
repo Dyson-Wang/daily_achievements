@@ -257,10 +257,11 @@ class AchievementScreenState extends State<AchievementScreen> {
 
   @override
   Widget build(BuildContext context) {
-    bool showContent = _avatar != null && _userName != null;
+    // bool showContent = _avatar != null && _userName != null;
+    bool showContent = _userName != null;
     // bool showContent = false;
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.dark,
+      value: SystemUiOverlayStyle.dark, //控制状态栏图标颜色
       child: Stack(
         children: [
           _buildBackground(),
@@ -344,6 +345,7 @@ class AchievementScreenState extends State<AchievementScreen> {
     backgroundColor: CupertinoColors.transparent,
     navigationBar: const CupertinoNavigationBar(
       backgroundColor: CupertinoColors.transparent,
+      brightness: Brightness.light,
       middle: Text(AppConstants.appTitle),
       padding: EdgeInsetsDirectional.only(top: 20),
     ),

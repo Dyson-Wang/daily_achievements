@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -490,13 +489,26 @@ class AchievementItem extends StatefulWidget {
 class _AchievementItemState extends State<AchievementItem> {
   late Achievement _achievement;
   late TextEditingController _titleController;
-  bool _isEditing = false;
+  late FocusNode _focusNode;
 
   @override
   void initState() {
     super.initState();
     _achievement = widget.achievement;
+    _focusNode = FocusNode();
     _titleController = TextEditingController(text: _achievement.title);
+    _focusNode.addListener(() {
+      if (!_focusNode.hasFocus) {
+        _updateAchievement();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _focusNode.dispose();
+    super.dispose();
   }
 
   void _updateAchievement() {
@@ -506,33 +518,39 @@ class _AchievementItemState extends State<AchievementItem> {
     );
     setState(() {
       _achievement = newAchievement;
-      _isEditing = false;
     });
     widget.onUpdated(newAchievement); // 触发回调通知父组件
   }
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppConstants.paddingHorizontal,
-      ),
-      child: Container(
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: CupertinoColors.white,
-          borderRadius: BorderRadius.circular(AppConstants.itemRadius),
-          boxShadow: [
-            BoxShadow(
-              color: AppConstants.cardShadow,
-              blurRadius: 4,
-              spreadRadius: 0.5,
-              offset: const Offset(0, 2),
-            ),
-          ],
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).requestFocus(_focusNode),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppConstants.paddingHorizontal,
         ),
-        child: Row(
-          children: [_buildIcon(), const SizedBox(width: 12), _buildContent()],
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: CupertinoColors.white,
+            borderRadius: BorderRadius.circular(AppConstants.itemRadius),
+            boxShadow: [
+              BoxShadow(
+                color: AppConstants.cardShadow,
+                blurRadius: 4,
+                spreadRadius: 0.5,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              _buildIcon(),
+              const SizedBox(width: 12),
+              _buildContent(),
+            ],
+          ),
         ),
       ),
     );
@@ -556,22 +574,30 @@ class _AchievementItemState extends State<AchievementItem> {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (_isEditing)
-          Text(
-            widget.achievement.title,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-          )
-        else
-          CupertinoTextField(
-            controller: _titleController,
-            placeholder: '编辑成就',
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            autofocus: true,
-            onSubmitted: (_) => _updateAchievement(),
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.transparent),
-            ),
-          ),
+        // if (!_isEditing)
+        //   GestureDetector(
+        //     onTap: () {
+        //       setState(() {
+        //         _isEditing = true;
+        //       });
+        //     },
+        //     child: Text(
+        //       widget.achievement.title,
+        //       style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        //     ),
+        //   )
+        // else
+        CupertinoTextField.borderless(
+          focusNode: _focusNode,
+          controller: _titleController,
+          placeholder: '编辑成就',
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          // autofocus: true,
+          padding: const EdgeInsets.symmetric(vertical: 0, horizontal: 8),
+          onSubmitted: (_) => _updateAchievement(),
+          onEditingComplete: () => _updateAchievement(),
+        ),
+
         const SizedBox(height: 8),
         Text(
           DateFormat('yyyy.MM.dd').format(widget.achievement.date),

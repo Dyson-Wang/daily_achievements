@@ -524,33 +524,26 @@ class _AchievementItemState extends State<AchievementItem> {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => FocusScope.of(context).requestFocus(_focusNode),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppConstants.paddingHorizontal,
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppConstants.paddingHorizontal,
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: CupertinoColors.white,
+          borderRadius: BorderRadius.circular(AppConstants.itemRadius),
+          boxShadow: [
+            BoxShadow(
+              color: AppConstants.cardShadow,
+              blurRadius: 4,
+              spreadRadius: 0.5,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: CupertinoColors.white,
-            borderRadius: BorderRadius.circular(AppConstants.itemRadius),
-            boxShadow: [
-              BoxShadow(
-                color: AppConstants.cardShadow,
-                blurRadius: 4,
-                spreadRadius: 0.5,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              _buildIcon(),
-              const SizedBox(width: 12),
-              _buildContent(),
-            ],
-          ),
+        child: Row(
+          children: [_buildIcon(), const SizedBox(width: 12), _buildContent()],
         ),
       ),
     );
@@ -571,39 +564,29 @@ class _AchievementItemState extends State<AchievementItem> {
   );
 
   Widget _buildContent() => Expanded(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // if (!_isEditing)
-        //   GestureDetector(
-        //     onTap: () {
-        //       setState(() {
-        //         _isEditing = true;
-        //       });
-        //     },
-        //     child: Text(
-        //       widget.achievement.title,
-        //       style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-        //     ),
-        //   )
-        // else
-        CupertinoTextField.borderless(
-          focusNode: _focusNode,
-          controller: _titleController,
-          placeholder: '编辑成就',
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-          // autofocus: true,
-          padding: const EdgeInsets.symmetric(vertical: 0, horizontal: 8),
-          onSubmitted: (_) => _updateAchievement(),
-          onEditingComplete: () => _updateAchievement(),
-        ),
+    child: GestureDetector(
+      onTap: () => FocusScope.of(context).requestFocus(_focusNode),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CupertinoTextField.borderless(
+            focusNode: _focusNode,
+            controller: _titleController,
+            placeholder: '编辑成就',
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            // autofocus: true,
+            padding: const EdgeInsets.symmetric(vertical: 0, horizontal: 8),
+            // onSubmitted: (_) => _updateAchievement(),
+            // onEditingComplete: () => _updateAchievement(),
+          ),
 
-        const SizedBox(height: 8),
-        Text(
-          DateFormat('yyyy.MM.dd').format(widget.achievement.date),
-          style: const TextStyle(fontSize: 12, color: AppConstants.textGrey),
-        ),
-      ],
+          const SizedBox(height: 8),
+          Text(
+            DateFormat('yyyy.MM.dd').format(widget.achievement.date),
+            style: const TextStyle(fontSize: 12, color: AppConstants.textGrey),
+          ),
+        ],
+      ),
     ),
   );
 }

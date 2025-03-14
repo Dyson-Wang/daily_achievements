@@ -66,6 +66,7 @@ class MainApp extends StatelessWidget {
     return const CupertinoApp(
       theme: CupertinoThemeData(brightness: Brightness.light),
       title: '每日成就',
+      debugShowCheckedModeBanner: false,
       home: AchievementScreen(),
     );
   }
